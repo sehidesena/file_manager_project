@@ -12,7 +12,7 @@ exports.uploadVideo = async (req, res) => {
       title,
       filename: req.file.filename,
       url: `/uploads/${req.file.filename}`,
-      // uploadedBy: req.userId (auth eklenirse)
+      uploadedBy: req.userId // Artık yükleyen kullanıcıyı kaydediyoruz
     });
     await video.save();
     res.status(201).json({ message: 'Video yüklendi!', video });
@@ -61,4 +61,68 @@ exports.streamVideo = (req, res) => {
     const stream = fs.createReadStream(videoPath, { start, end });
     stream.pipe(res);
   });
+};
+
+exports.deleteVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const video = await Video.findById(id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video bulunamadı.' });
+    }
+    // Sadece yükleyen kullanıcı silebilir
+    if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Bu videoyu silme yetkiniz yok.' });
+    }
+    // Dosyayı uploads klasöründen sil
+    const filePath = path.join(__dirname, '../../uploads', video.filename);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+    await video.deleteOne();
+    res.json({ message: 'Video silindi.' });
+  } catch (err) {
+    res.status(500).json({ error: 'Video silinirken hata oluştu.' });
+  }
+};
+
+exports.listUserVideos = async (req, res) => {
+  try {
+    const videos = await Video.find({ uploadedBy: req.userId }).sort({ createdAt: -1 });
+    res.json(videos);
+  } catch (err) {
+    res.status(500).json({ error: 'Kullanıcının videoları listelenirken hata oluştu.' });
+  }
+};
+
+exports.updateVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title } = req.body;
+    const video = await Video.findById(id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video bulunamadı.' });
+    }
+    // Sadece yükleyen kullanıcı güncelleyebilir
+    if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Bu videoyu güncelleme yetkiniz yok.' });
+    }
+    // Başlık güncelle
+    if (title) {
+      video.title = title;
+    }
+    // Dosya güncelle (yeni dosya yüklendiyse)
+    if (req.file) {
+      const oldFilePath = path.join(__dirname, '../../uploads', video.filename);
+      if (fs.existsSync(oldFilePath)) {
+        fs.unlinkSync(oldFilePath);
+      }
+      video.filename = req.file.filename;
+      video.url = `/uploads/${req.file.filename}`;
+    }
+    await video.save();
+    res.json({ message: 'Video güncellendi.', video });
+  } catch (err) {
+    res.status(500).json({ error: 'Video güncellenirken hata oluştu.' });
+  }
 };

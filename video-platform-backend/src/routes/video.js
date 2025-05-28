@@ -22,7 +22,16 @@ router.post('/upload', auth, upload.single('video'), videoController.uploadVideo
 // Tüm videoları listeleme endpointi
 router.get('/list', videoController.listVideos);
 
+// Kullanıcıya özel video listesi (korumalı)
+router.get('/my-videos', auth, videoController.listUserVideos);
+
 // Video oynatma (korumalı)
 router.get('/stream/:filename', auth, videoController.streamVideo);
+
+// Video silme endpointi (korumalı)
+router.delete('/delete/:id', auth, videoController.deleteVideo);
+
+// Video güncelleme endpointi (korumalı)
+router.put('/update/:id', auth, upload.single('video'), videoController.updateVideo);
 
 module.exports = router;
