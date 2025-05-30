@@ -1,0 +1,308 @@
+#root {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 2rem;
+  text-align: center;
+}
+
+.logo {
+  height: 6em;
+  padding: 1.5em;
+  will-change: filter;
+  transition: filter 300ms;
+}
+
+.logo:hover {
+  filter: drop-shadow(0 0 2em #646cffaa);
+}
+
+.logo.react:hover {
+  filter: drop-shadow(0 0 2em #61dafbaa);
+}
+
+@keyframes logo-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a:nth-of-type(2) .logo {
+    animation: logo-spin infinite 20s linear;
+  }
+}
+
+.card {
+  padding: 2em;
+}
+
+.read-the-docs {
+  color: #888;
+}
+
+/* Modern ve şık arayüz için temel stiller */
+.container {
+  max-width: 700px;
+  margin: 40px auto;
+  background: #18181b;
+  color: #fff;
+  border-radius: 16px;
+  box-shadow: 0 4px 32px #0002;
+  padding: 32px 24px 40px 24px;
+}
+
+h1 {
+  text-align: center;
+  margin-bottom: 32px;
+  font-size: 2.2rem;
+  letter-spacing: 1px;
+}
+
+.upload-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.upload-form input[type='text'] {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 1rem;
+}
+
+.upload-form input[type='file'] {
+  color: #fff;
+}
+
+.upload-form button {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.upload-form button:disabled {
+  background: #444;
+  cursor: not-allowed;
+}
+
+.message {
+  background: #27272a;
+  color: #facc15;
+  padding: 10px 16px;
+  border-radius: 8px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+
+.video-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.video-card {
+  background: #23232b;
+  border-radius: 10px;
+  padding: 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 2px 8px #0001;
+}
+
+.video-title {
+  font-size: 1.1rem;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.video-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.video-actions button {
+  background: #22d3ee;
+  color: #18181b;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.video-actions button:disabled {
+  background: #444;
+  color: #bbb;
+  cursor: not-allowed;
+}
+
+.video-status {
+  font-size: 0.95rem;
+  color: #facc15;
+}
+
+.auth-toggle {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.auth-toggle button {
+  background: #23232b;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.auth-toggle button.active {
+  background: #6366f1;
+  color: #fff;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.auth-form input {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  font-size: 1rem;
+}
+
+.auth-form button {
+  background: #22d3ee;
+  color: #18181b;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.logout-btn {
+  float: right;
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 1rem;
+  cursor: pointer;
+  margin-bottom: 18px;
+  margin-top: -48px;
+}
+
+.logout-btn:hover {
+  background: #dc2626;
+}
+
+.progress-bar {
+  width: 100%;
+  background: #333;
+  border-radius: 8px;
+  height: 16px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.progress {
+  height: 100%;
+  background: #22d3ee;
+  transition: width 0.3s;
+}
+
+.preview-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.preview-modal video {
+  border-radius: 12px;
+  box-shadow: 0 4px 32px #0008;
+}
+
+.update-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  background: #18181b;
+  padding: 10px 0;
+  border-radius: 8px;
+  justify-content: center;
+}
+
+.update-form input[type='text'] {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: none;
+  font-size: 1rem;
+}
+
+.update-form input[type='file'] {
+  color: #fff;
+}
+
+.update-form button {
+  background: #6366f1;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.update-form button:disabled {
+  background: #444;
+  cursor: not-allowed;
+}
+
+.video-meta {
+  font-size: 0.98em;
+  color: #aaa;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 600px) {
+  .container {
+    padding: 12px 2vw 24px 2vw;
+  }
+
+  .upload-form {
+    flex-direction: column;
+    gap: 8px;
+  }
+}

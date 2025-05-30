@@ -1,6 +1,15 @@
+const AWS = require('aws-sdk');
 const Video = require('../models/Video');
-const fs = require('fs');
+const s3 = require('../services/s3Service');
 const path = require('path');
+
+// MediaConvert client'ı başlat
+const mediaConvert = new AWS.MediaConvert({
+  endpoint: process.env.MEDIACONVERT_ENDPOINT, // .env'ye eklemelisin
+  region: process.env.AWS_REGION,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+});
 
 exports.uploadVideo = async (req, res) => {
   try {
@@ -8,16 +17,78 @@ exports.uploadVideo = async (req, res) => {
       return res.status(400).json({ error: 'Video dosyası gerekli.' });
     }
     const { title } = req.body;
+    // 1. Dosyayı S3 input klasörüne yükle
+    const inputKey = 'input/' + Date.now() + '-' + req.file.originalname;
+    await s3.upload({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: inputKey,
+      Body: req.file.buffer,
+      ContentType: req.file.mimetype
+    }).promise();
+    // 2. MediaConvert job'ı başlat
+    const params = {
+      Role: process.env.MEDIACONVERT_ROLE_ARN, // .env'ye ekle
+      Settings: {
+        OutputGroups: [
+          {
+            Name: 'File Group',
+            OutputGroupSettings: {
+              Type: 'FILE_GROUP_SETTINGS',
+              FileGroupSettings: {
+                Destination: `s3://${process.env.S3_BUCKET_NAME}/output/`
+              }
+            },
+            Outputs: [
+              {
+                ContainerSettings: { Container: 'MP4' },
+                VideoDescription: {
+                  CodecSettings: {
+                    Codec: 'H_264',
+                    H264Settings: {
+                      RateControlMode: 'QVBR',
+                      MaxBitrate: 5000000
+                    }
+                  }
+                },
+                AudioDescriptions: [
+                  {
+                    AudioSourceName: 'Audio Selector 1',
+                    CodecSettings: {
+                      Codec: 'AAC',
+                      AacSettings: { Bitrate: 96000, CodingMode: 'CODING_MODE_2_0', SampleRate: 48000 }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        Inputs: [
+          {
+            FileInput: `s3://${process.env.S3_BUCKET_NAME}/${inputKey}`,
+            AudioSelectors: {
+              'Audio Selector 1': {
+                DefaultSelection: 'DEFAULT'
+              }
+            }
+          }
+        ]
+      }
+    };
+    const job = await mediaConvert.createJob(params).promise();
+    // 3. Video kaydını oluştur (output dosyası hazır olunca güncellenecek)
     const video = new Video({
       title,
-      filename: req.file.filename,
-      url: `/uploads/${req.file.filename}`,
-      uploadedBy: req.userId // Artık yükleyen kullanıcıyı kaydediyoruz
+      filename: inputKey,
+      url: '', // Output dosyası hazır olunca güncellenecek
+      uploadedBy: req.userId,
+      mediaconvertJobId: job.Job.Id
     });
     await video.save();
-    res.status(201).json({ message: 'Video yüklendi!', video });
+    res.status(201).json({ message: 'Video yüklendi ve MediaConvert job başlatıldı!', video, jobId: job.Job.Id });
   } catch (err) {
-    res.status(500).json({ error: 'Video yüklenirken hata oluştu.' });
+    console.error('MediaConvert Hatası:', err); // Hata detayını terminalde gör
+    res.status(500).json({ error: 'Video yüklenirken/MediaConvert job başlatılırken hata oluştu.', details: err });
   }
 };
 
@@ -70,17 +141,17 @@ exports.deleteVideo = async (req, res) => {
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
     }
-    // Sadece yükleyen kullanıcı silebilir
+    // Eğer video.uploadedBy yoksa veya null ise (eski kayıtlar için), silmeye izin ver
     if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
       return res.status(403).json({ error: 'Bu videoyu silme yetkiniz yok.' });
     }
-    // Dosyayı uploads klasöründen sil
-    const filePath = path.join(__dirname, '../../uploads', video.filename);
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-    }
+    // S3'ten sil
+    await s3.deleteObject({
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: video.filename
+    }).promise();
     await video.deleteOne();
-    res.json({ message: 'Video silindi.' });
+    res.json({ message: 'Video S3 ve veritabanından silindi.' });
   } catch (err) {
     res.status(500).json({ error: 'Video silinirken hata oluştu.' });
   }
@@ -103,7 +174,7 @@ exports.updateVideo = async (req, res) => {
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
     }
-    // Sadece yükleyen kullanıcı güncelleyebilir
+    // Sadece yükleyen kullanıcı güncelleybilir
     if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
       return res.status(403).json({ error: 'Bu videoyu güncelleme yetkiniz yok.' });
     }
@@ -113,16 +184,48 @@ exports.updateVideo = async (req, res) => {
     }
     // Dosya güncelle (yeni dosya yüklendiyse)
     if (req.file) {
-      const oldFilePath = path.join(__dirname, '../../uploads', video.filename);
-      if (fs.existsSync(oldFilePath)) {
-        fs.unlinkSync(oldFilePath);
-      }
-      video.filename = req.file.filename;
-      video.url = `/uploads/${req.file.filename}`;
+      // Eski dosyayı S3'ten sil
+      await s3.deleteObject({
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: video.filename
+      }).promise();
+      // Yeni dosyayı S3'e yükle
+      const s3Params = {
+        Bucket: process.env.S3_BUCKET_NAME,
+        Key: Date.now() + '-' + req.file.originalname,
+        Body: req.file.buffer,
+        ContentType: req.file.mimetype,
+      };
+      const s3Result = await s3.upload(s3Params).promise();
+      video.filename = s3Params.Key;
+      video.url = s3Result.Location;
     }
     await video.save();
     res.json({ message: 'Video güncellendi.', video });
   } catch (err) {
     res.status(500).json({ error: 'Video güncellenirken hata oluştu.' });
+  }
+};
+
+exports.getSignedVideoUrl = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const video = await Video.findById(id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video bulunamadı.' });
+    }
+    // Sadece yükleyen veya giriş yapan kullanıcı izleyebilsin (isteğe bağlı)
+    // if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
+    //   return res.status(403).json({ error: 'Bu videoyu izleme yetkiniz yok.' });
+    // }
+    const params = {
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: video.filename,
+      Expires: 60 * 60 // 1 saat
+    };
+    const signedUrl = s3.getSignedUrl('getObject', params);
+    res.json({ url: signedUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Video linki alınırken hata oluştu.' });
   }
 };

@@ -6,6 +6,7 @@ const VideoSchema = new mongoose.Schema({
   url: { type: String },
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now },
+  mediaconvertJobId: { type: String }, // MediaConvert job ID'si eklendi
 });
 
 module.exports = mongoose.model('Video', VideoSchema);

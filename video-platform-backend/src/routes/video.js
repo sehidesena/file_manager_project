@@ -1,19 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const path = require('path');
 const videoController = require('../controllers/videoController');
 const auth = require('../middlewares/auth');
 
-// Multer ayarları
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, path.join(__dirname, '../../uploads'));
-  },
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname);
-  },
-});
+// Multer ayarları (bellek üzerinde tut)
+const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
 // Video yükleme endpointi (korumalı)
@@ -26,7 +18,7 @@ router.get('/list', videoController.listVideos);
 router.get('/my-videos', auth, videoController.listUserVideos);
 
 // Video oynatma (korumalı)
-router.get('/stream/:filename', auth, videoController.streamVideo);
+router.get('/stream/:id', auth, videoController.getSignedVideoUrl);
 
 // Video silme endpointi (korumalı)
 router.delete('/delete/:id', auth, videoController.deleteVideo);
