@@ -5,9 +5,17 @@ const API_BASE = 'http://localhost:5050/api'; // Backend API ana adresi
 
 const VIDEO_FORMATS = [
   { label: 'MP4 (H.264)', value: 'mp4' },
-  { label: 'WEBM (VP9)', value: 'webm' },
   { label: 'MOV (H.264)', value: 'mov' },
-  { label: 'AVI (H.264)', value: 'avi' },
+];
+const RESOLUTIONS = [
+  { label: '720p (1280x720)', width: 1280, height: 720 },
+  { label: '1080p (1920x1080)', width: 1920, height: 1080 },
+  { label: '480p (854x480)', width: 854, height: 480 },
+];
+const BITRATES = [
+  { label: '1 Mbps', value: 1000000 },
+  { label: '2 Mbps', value: 2000000 },
+  { label: '4 Mbps', value: 4000000 },
 ];
 
 function App() {
@@ -32,6 +40,10 @@ function App() {
   const [updateTitle, setUpdateTitle] = useState('');
   const [updateFile, setUpdateFile] = useState(null);
   const [updateFormat, setUpdateFormat] = useState('mp4');
+  const [compressId, setCompressId] = useState(null);
+  const [compressResolution, setCompressResolution] = useState(RESOLUTIONS[0]);
+  const [compressBitrate, setCompressBitrate] = useState(BITRATES[0].value);
+  const [compressLoading, setCompressLoading] = useState(false);
 
   // Auth işlemleri
   const handleAuthChange = e => setAuthForm({ ...authForm, [e.target.name]: e.target.value });
@@ -220,6 +232,49 @@ function App() {
     setLoading(false);
   };
 
+  // Sıkıştırma işlemi başlat
+  const startCompress = (video) => {
+    setCompressId(video._id);
+    setCompressResolution(RESOLUTIONS[0]);
+    setCompressBitrate(BITRATES[0].value);
+  };
+  const cancelCompress = () => {
+    setCompressId(null);
+    setCompressResolution(RESOLUTIONS[0]);
+    setCompressBitrate(BITRATES[0].value);
+  };
+  const handleCompress = async (e) => {
+    e.preventDefault();
+    if (!compressId) return;
+    setCompressLoading(true);
+    setMessage('');
+    try {
+      const res = await fetch(`${API_BASE}/video/compress/${compressId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          width: compressResolution.width,
+          height: compressResolution.height,
+          bitrate: compressBitrate,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage('Sıkıştırma işlemi başlatıldı!');
+        fetchVideos();
+        cancelCompress();
+      } else {
+        setMessage(data.error || 'Sıkıştırma hatası!');
+      }
+    } catch (err) {
+      setMessage('Sıkıştırma sırasında hata!');
+    }
+    setCompressLoading(false);
+  };
+
   // Auth formu
   if (!token) {
     return (
@@ -311,7 +366,7 @@ function App() {
             <div className="video-card" key={video._id}>
               <div className="video-title">{video.title}</div>
               <div className="video-meta">
-                <span>Format: {video.filename?.split('.').pop()?.toUpperCase() || 'Bilinmiyor'}</span>
+                <span>Format: {(video.format || video.filename?.split('.').pop() || 'mp4').toUpperCase()}</span>
                 <span style={{ marginLeft: 12, color: '#aaa', fontSize: '0.95em' }}>
                   {new Date(video.createdAt).toLocaleString('tr-TR')}
                 </span>
@@ -320,6 +375,7 @@ function App() {
                 <button onClick={() => handlePlay(video)} disabled={!video.url}>Oynat</button>
                 <button onClick={() => handleDelete(video._id)} disabled={loading}>Sil</button>
                 <button onClick={() => startUpdate(video)} disabled={loading}>Güncelle</button>
+                <button onClick={() => startCompress(video)} disabled={loading}>Sıkıştır</button>
               </div>
               <div className="video-status">
                 {video.url ? 'İşlendi' : 'İşleniyor...'}
@@ -344,6 +400,26 @@ function App() {
                   </select>
                   <button type="submit" disabled={loading}>Kaydet</button>
                   <button type="button" onClick={() => cancelUpdate()}>İptal</button>
+                </form>
+              )}
+              {compressId === video._id && (
+                <form className="update-form" onSubmit={handleCompress} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                  <label>Çözünürlük:
+                    <select value={compressResolution.label} onChange={e => setCompressResolution(RESOLUTIONS.find(r => r.label === e.target.value))}>
+                      {RESOLUTIONS.map(r => (
+                        <option key={r.label} value={r.label}>{r.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>Bitrate:
+                    <select value={compressBitrate} onChange={e => setCompressBitrate(Number(e.target.value))}>
+                      {BITRATES.map(b => (
+                        <option key={b.value} value={b.value}>{b.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="submit" disabled={compressLoading}>Sıkıştır</button>
+                  <button type="button" onClick={cancelCompress}>İptal</button>
                 </form>
               )}
             </div>

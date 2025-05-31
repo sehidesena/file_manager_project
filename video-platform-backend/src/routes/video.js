@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const videoController = require('../controllers/videoController');
+const { uploadVideo, listVideos, streamVideo, deleteVideo, listUserVideos, updateVideo, getSignedVideoUrl, compressVideo } = require('../controllers/videoController');
 const auth = require('../middlewares/auth');
 
 // Multer ayarları (bellek üzerinde tut)
@@ -25,5 +25,8 @@ router.delete('/delete/:id', auth, videoController.deleteVideo);
 
 // Video güncelleme endpointi (korumalı)
 router.put('/update/:id', auth, upload.single('video'), videoController.updateVideo);
+
+// Video sıkıştırma endpointi (korumalı)
+router.post('/compress/:id', auth, videoController.compressVideo);
 
 module.exports = router;

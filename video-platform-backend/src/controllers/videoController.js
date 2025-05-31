@@ -16,7 +16,10 @@ exports.uploadVideo = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: 'Video dosyası gerekli.' });
     }
-    const { title } = req.body;
+    const { title, format } = req.body;
+    if (format && !['mp4', 'mov'].includes(format.toLowerCase())) {
+      return res.status(400).json({ error: 'Sadece MP4 ve MOV formatları destekleniyor.' });
+    }
     // 1. Dosyayı S3 input klasörüne yükle
     const inputKey = 'input/' + Date.now() + '-' + req.file.originalname;
     await s3.upload({
@@ -25,9 +28,34 @@ exports.uploadVideo = async (req, res) => {
       Body: req.file.buffer,
       ContentType: req.file.mimetype
     }).promise();
-    // 2. MediaConvert job'ı başlat
+    // 2. MediaConvert job'ı başlat (format parametresine göre ve sıkıştırma ayarları)
+    let container, videoCodecSettings;
+    switch ((format || '').toLowerCase()) {
+      case 'mov':
+        container = 'MOV';
+        videoCodecSettings = {
+          Codec: 'H_264',
+          H264Settings: {
+            RateControlMode: 'QVBR',
+            MaxBitrate: 2000000, // 2 Mbps
+            QvbrSettings: { QvbrQualityLevel: 7 },
+            // Sıkıştırma için çözünürlük ayarı
+          }
+        };
+        break;
+      default:
+        container = 'MP4';
+        videoCodecSettings = {
+          Codec: 'H_264',
+          H264Settings: {
+            RateControlMode: 'QVBR',
+            MaxBitrate: 2000000, // 2 Mbps
+            QvbrSettings: { QvbrQualityLevel: 7 },
+          }
+        };
+    }
     const params = {
-      Role: process.env.MEDIACONVERT_ROLE_ARN, // .env'ye ekle
+      Role: process.env.MEDIACONVERT_ROLE_ARN,
       Settings: {
         OutputGroups: [
           {
@@ -40,15 +68,13 @@ exports.uploadVideo = async (req, res) => {
             },
             Outputs: [
               {
-                ContainerSettings: { Container: 'MP4' },
+                ContainerSettings: { Container: container },
                 VideoDescription: {
-                  CodecSettings: {
-                    Codec: 'H_264',
-                    H264Settings: {
-                      RateControlMode: 'QVBR',
-                      MaxBitrate: 5000000
-                    }
-                  }
+                  CodecSettings: videoCodecSettings,
+                  Width: 1280,
+                  Height: 720,
+                  ScalingBehavior: 'DEFAULT',
+                  Sharpness: 50
                 },
                 AudioDescriptions: [
                   {
@@ -82,7 +108,8 @@ exports.uploadVideo = async (req, res) => {
       filename: inputKey,
       url: '', // Output dosyası hazır olunca güncellenecek
       uploadedBy: req.userId,
-      mediaconvertJobId: job.Job.Id
+      mediaconvertJobId: job.Job.Id,
+      format: (format || 'mp4').toLowerCase()
     });
     await video.save();
     res.status(201).json({ message: 'Video yüklendi ve MediaConvert job başlatıldı!', video, jobId: job.Job.Id });
@@ -169,36 +196,120 @@ exports.listUserVideos = async (req, res) => {
 exports.updateVideo = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title } = req.body;
+    const { title, format } = req.body;
+    if (format && !['mp4', 'mov'].includes(format.toLowerCase())) {
+      return res.status(400).json({ error: 'Sadece MP4 ve MOV formatları destekleniyor.' });
+    }
     const video = await Video.findById(id);
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
     }
-    // Sadece yükleyen kullanıcı güncelleybilir
     if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
       return res.status(403).json({ error: 'Bu videoyu güncelleme yetkiniz yok.' });
     }
-    // Başlık güncelle
     if (title) {
       video.title = title;
     }
+    let inputKey = video.filename;
+    let fileChanged = false;
     // Dosya güncelle (yeni dosya yüklendiyse)
     if (req.file) {
-      // Eski dosyayı S3'ten sil
       await s3.deleteObject({
         Bucket: process.env.S3_BUCKET_NAME,
         Key: video.filename
       }).promise();
-      // Yeni dosyayı S3'e yükle
       const s3Params = {
         Bucket: process.env.S3_BUCKET_NAME,
-        Key: Date.now() + '-' + req.file.originalname,
+        Key: 'input/' + Date.now() + '-' + req.file.originalname,
         Body: req.file.buffer,
         ContentType: req.file.mimetype,
       };
-      const s3Result = await s3.upload(s3Params).promise();
+      await s3.upload(s3Params).promise();
       video.filename = s3Params.Key;
-      video.url = s3Result.Location;
+      inputKey = s3Params.Key;
+      fileChanged = true;
+      video.url = '';
+      video.mediaconvertJobId = null;
+    }
+    // Format değişikliği veya dosya değişikliği varsa MediaConvert job başlat
+    const currentFormat = (video.filename.split('.').pop() || '').toLowerCase();
+    if (format && (fileChanged || format !== currentFormat)) {
+      let container, videoCodecSettings;
+      switch (format) {
+        case 'mov':
+          container = 'MOV';
+          videoCodecSettings = {
+            Codec: 'H_264',
+            H264Settings: {
+              RateControlMode: 'QVBR',
+              MaxBitrate: 2000000,
+              QvbrSettings: { QvbrQualityLevel: 7 },
+            }
+          };
+          break;
+        default:
+          container = 'MP4';
+          videoCodecSettings = {
+            Codec: 'H_264',
+            H264Settings: {
+              RateControlMode: 'QVBR',
+              MaxBitrate: 2000000,
+              QvbrSettings: { QvbrQualityLevel: 7 },
+            }
+          };
+      }
+      const params = {
+        Role: process.env.MEDIACONVERT_ROLE_ARN,
+        Settings: {
+          OutputGroups: [
+            {
+              Name: 'File Group',
+              OutputGroupSettings: {
+                Type: 'FILE_GROUP_SETTINGS',
+                FileGroupSettings: {
+                  Destination: `s3://${process.env.S3_BUCKET_NAME}/output/`
+                }
+              },
+              Outputs: [
+                {
+                  ContainerSettings: { Container: container },
+                  VideoDescription: {
+                    CodecSettings: videoCodecSettings,
+                    Width: 1280,
+                    Height: 720,
+                    ScalingBehavior: 'DEFAULT',
+                    Sharpness: 50
+                  },
+                  AudioDescriptions: [
+                    {
+                      AudioSourceName: 'Audio Selector 1',
+                      CodecSettings: {
+                        Codec: 'AAC',
+                        AacSettings: { Bitrate: 96000, CodingMode: 'CODING_MODE_2_0', SampleRate: 48000 }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          Inputs: [
+            {
+              FileInput: `s3://${process.env.S3_BUCKET_NAME}/${inputKey}`,
+              AudioSelectors: {
+                'Audio Selector 1': {
+                  DefaultSelection: 'DEFAULT'
+                }
+              }
+            }
+          ]
+        }
+      };
+      // Yeni MediaConvert job başlat
+      const job = await mediaConvert.createJob(params).promise();
+      video.mediaconvertJobId = job.Job.Id;
+      video.url = '';
+      video.format = (format || 'mp4').toLowerCase();
     }
     await video.save();
     res.json({ message: 'Video güncellendi.', video });
@@ -227,5 +338,91 @@ exports.getSignedVideoUrl = async (req, res) => {
     res.json({ url: signedUrl });
   } catch (err) {
     res.status(500).json({ error: 'Video linki alınırken hata oluştu.' });
+  }
+};
+
+exports.compressVideo = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { width, height, bitrate } = req.body;
+    if (!width || !height || !bitrate) {
+      return res.status(400).json({ error: 'Çözünürlük ve bitrate zorunlu.' });
+    }
+    const video = await Video.findById(id);
+    if (!video) {
+      return res.status(404).json({ error: 'Video bulunamadı.' });
+    }
+    // Sadece yükleyen kullanıcı sıkıştırabilir
+    if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
+      return res.status(403).json({ error: 'Bu videoyu sıkıştırma yetkiniz yok.' });
+    }
+    // MediaConvert job başlat
+    const container = video.format === 'mov' ? 'MOV' : 'MP4';
+    const videoCodecSettings = {
+      Codec: 'H_264',
+      H264Settings: {
+        RateControlMode: 'QVBR',
+        MaxBitrate: bitrate,
+        QvbrSettings: { QvbrQualityLevel: 7 },
+      }
+    };
+    const params = {
+      Role: process.env.MEDIACONVERT_ROLE_ARN,
+      Settings: {
+        OutputGroups: [
+          {
+            Name: 'File Group',
+            OutputGroupSettings: {
+              Type: 'FILE_GROUP_SETTINGS',
+              FileGroupSettings: {
+                Destination: `s3://${process.env.S3_BUCKET_NAME}/output/`
+              }
+            },
+            Outputs: [
+              {
+                ContainerSettings: { Container: container },
+                VideoDescription: {
+                  CodecSettings: videoCodecSettings,
+                  Width: width,
+                  Height: height,
+                  ScalingBehavior: 'DEFAULT',
+                  Sharpness: 50
+                },
+                AudioDescriptions: [
+                  {
+                    AudioSourceName: 'Audio Selector 1',
+                    CodecSettings: {
+                      Codec: 'AAC',
+                      AacSettings: { Bitrate: 96000, CodingMode: 'CODING_MODE_2_0', SampleRate: 48000 }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        Inputs: [
+          {
+            FileInput: `s3://${process.env.S3_BUCKET_NAME}/${video.filename}`,
+            AudioSelectors: {
+              'Audio Selector 1': {
+                DefaultSelection: 'DEFAULT'
+              }
+            }
+          }
+        ]
+      }
+    };
+    const job = await mediaConvert.createJob(params).promise();
+    video.mediaconvertJobId = job.Job.Id;
+    video.url = '';
+    video.compressed = true;
+    video.compressedWidth = width;
+    video.compressedHeight = height;
+    video.compressedBitrate = bitrate;
+    await video.save();
+    res.json({ message: 'Sıkıştırma işlemi başlatıldı.', video });
+  } catch (err) {
+    res.status(500).json({ error: 'Sıkıştırma başlatılırken hata oluştu.' });
   }
 };
