@@ -1,7 +1,17 @@
 const AWS = require('aws-sdk');
-const Video = require('../models/Video');
+const mongoose = require('mongoose');
+const VideoSchema = require('../models/Video').schema;
 const s3 = require('../services/s3Service');
 const path = require('path');
+
+// Dinamik Video Modeli
+function getUserVideoModel(userId) {
+  const modelName = 'Video_' + userId;
+  if (mongoose.models[modelName]) {
+    return mongoose.models[modelName];
+  }
+  return mongoose.model(modelName, VideoSchema, 'videos_' + userId);
+}
 
 // MediaConvert client'ı başlat
 const mediaConvert = new AWS.MediaConvert({
@@ -102,7 +112,8 @@ exports.uploadVideo = async (req, res) => {
       }
     };
     const job = await mediaConvert.createJob(params).promise();
-    // 3. Video kaydını oluştur (output dosyası hazır olunca güncellenecek)
+    // Dinamik model
+    const Video = getUserVideoModel(req.userId);
     const video = new Video({
       title,
       filename: inputKey,
@@ -121,10 +132,28 @@ exports.uploadVideo = async (req, res) => {
 
 exports.listVideos = async (req, res) => {
   try {
+    // Sadece giriş yapan kullanıcının videoları listelensin
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Yetkisiz erişim.' });
+    }
+    const Video = getUserVideoModel(req.userId);
     const videos = await Video.find().sort({ createdAt: -1 });
     res.json(videos);
   } catch (err) {
     res.status(500).json({ error: 'Videolar listelenirken hata oluştu.' });
+  }
+};
+
+exports.listUserVideos = async (req, res) => {
+  try {
+    if (!req.userId) {
+      return res.status(401).json({ error: 'Yetkisiz erişim.' });
+    }
+    const Video = getUserVideoModel(req.userId);
+    const videos = await Video.find({ uploadedBy: req.userId }).sort({ createdAt: -1 });
+    res.json(videos);
+  } catch (err) {
+    res.status(500).json({ error: 'Kullanıcı videoları listelenirken hata oluştu.' });
   }
 };
 
@@ -164,6 +193,7 @@ exports.streamVideo = (req, res) => {
 exports.deleteVideo = async (req, res) => {
   try {
     const { id } = req.params;
+    const Video = getUserVideoModel(req.userId);
     const video = await Video.findById(id);
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
@@ -184,15 +214,6 @@ exports.deleteVideo = async (req, res) => {
   }
 };
 
-exports.listUserVideos = async (req, res) => {
-  try {
-    const videos = await Video.find({ uploadedBy: req.userId }).sort({ createdAt: -1 });
-    res.json(videos);
-  } catch (err) {
-    res.status(500).json({ error: 'Kullanıcının videoları listelenirken hata oluştu.' });
-  }
-};
-
 exports.updateVideo = async (req, res) => {
   try {
     const { id } = req.params;
@@ -200,6 +221,7 @@ exports.updateVideo = async (req, res) => {
     if (format && !['mp4', 'mov'].includes(format.toLowerCase())) {
       return res.status(400).json({ error: 'Sadece MP4 ve MOV formatları destekleniyor.' });
     }
+    const Video = getUserVideoModel(req.userId);
     const video = await Video.findById(id);
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
@@ -321,14 +343,11 @@ exports.updateVideo = async (req, res) => {
 exports.getSignedVideoUrl = async (req, res) => {
   try {
     const { id } = req.params;
+    const Video = getUserVideoModel(req.userId);
     const video = await Video.findById(id);
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
     }
-    // Sadece yükleyen veya giriş yapan kullanıcı izleyebilsin (isteğe bağlı)
-    // if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
-    //   return res.status(403).json({ error: 'Bu videoyu izleme yetkiniz yok.' });
-    // }
     const params = {
       Bucket: process.env.S3_BUCKET_NAME,
       Key: video.filename,
@@ -344,19 +363,25 @@ exports.getSignedVideoUrl = async (req, res) => {
 exports.compressVideo = async (req, res) => {
   try {
     const { id } = req.params;
-    const { width, height, bitrate } = req.body;
+    let { width, height, bitrate } = req.body;
     if (!width || !height || !bitrate) {
       return res.status(400).json({ error: 'Çözünürlük ve bitrate zorunlu.' });
     }
+    // Tip dönüşümü ve validasyon
+    width = parseInt(width);
+    height = parseInt(height);
+    bitrate = parseInt(bitrate);
+    if (isNaN(width) || isNaN(height) || isNaN(bitrate) || width < 100 || height < 100 || bitrate < 100000) {
+      return res.status(400).json({ error: 'Geçerli bir çözünürlük ve bitrate giriniz.' });
+    }
+    const Video = getUserVideoModel(req.userId);
     const video = await Video.findById(id);
     if (!video) {
       return res.status(404).json({ error: 'Video bulunamadı.' });
     }
-    // Sadece yükleyen kullanıcı sıkıştırabilir
     if (video.uploadedBy && video.uploadedBy.toString() !== req.userId) {
       return res.status(403).json({ error: 'Bu videoyu sıkıştırma yetkiniz yok.' });
     }
-    // MediaConvert job başlat
     const container = video.format === 'mov' ? 'MOV' : 'MP4';
     const videoCodecSettings = {
       Codec: 'H_264',
@@ -413,16 +438,25 @@ exports.compressVideo = async (req, res) => {
         ]
       }
     };
-    const job = await mediaConvert.createJob(params).promise();
-    video.mediaconvertJobId = job.Job.Id;
-    video.url = '';
-    video.compressed = true;
-    video.compressedWidth = width;
-    video.compressedHeight = height;
-    video.compressedBitrate = bitrate;
-    await video.save();
-    res.json({ message: 'Sıkıştırma işlemi başlatıldı.', video });
+    try {
+      const job = await mediaConvert.createJob(params).promise();
+      video.mediaconvertJobId = job.Job.Id;
+      video.url = '';
+      video.compressed = true;
+      video.compressedWidth = width;
+      video.compressedHeight = height;
+      video.compressedBitrate = bitrate;
+      await video.save();
+      res.json({ message: 'Sıkıştırma işlemi başlatıldı.', video });
+    } catch (mcErr) {
+      console.error('MediaConvert Sıkıştırma Hatası:', mcErr);
+      let errorMsg = 'Sıkıştırma başlatılırken hata oluştu.';
+      if (mcErr && mcErr.message) errorMsg = mcErr.message;
+      if (mcErr && mcErr.code) errorMsg += ` (Kod: ${mcErr.code})`;
+      return res.status(500).json({ error: errorMsg, details: mcErr });
+    }
   } catch (err) {
-    res.status(500).json({ error: 'Sıkıştırma başlatılırken hata oluştu.' });
+    console.error('Sıkıştırma Servis Hatası:', err);
+    res.status(500).json({ error: 'Sıkıştırma başlatılırken beklenmeyen bir hata oluştu.', details: err });
   }
 };

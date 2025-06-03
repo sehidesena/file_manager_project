@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer');
-const { uploadVideo, listVideos, streamVideo, deleteVideo, listUserVideos, updateVideo, getSignedVideoUrl, compressVideo } = require('../controllers/videoController');
+const videoController = require('../controllers/videoController');
+// const { uploadVideo, listVideos, streamVideo, deleteVideo, listUserVideos, updateVideo, getSignedVideoUrl, compressVideo } = require('../controllers/videoController');
 const auth = require('../middlewares/auth');
 
 // Multer ayarları (bellek üzerinde tut)
@@ -11,8 +12,8 @@ const upload = multer({ storage });
 // Video yükleme endpointi (korumalı)
 router.post('/upload', auth, upload.single('video'), videoController.uploadVideo);
 
-// Tüm videoları listeleme endpointi
-router.get('/list', videoController.listVideos);
+// Tüm videoları listeleme endpointi artık auth ile korumalı ve kullanıcıya özel
+router.get('/list', auth, videoController.listVideos);
 
 // Kullanıcıya özel video listesi (korumalı)
 router.get('/my-videos', auth, videoController.listUserVideos);

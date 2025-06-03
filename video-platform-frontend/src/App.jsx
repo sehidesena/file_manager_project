@@ -321,7 +321,7 @@ function App() {
   // Video arayüzü
   return (
     <div className="container">
-      <h1>Video Platform</h1>
+      <h1>Videofy</h1>
       <button className="logout-btn" onClick={handleLogout}>Çıkış Yap</button>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
         <button onClick={() => setShowMyVideos(false)} className={!showMyVideos ? 'active' : ''}>Tüm Videolar</button>
