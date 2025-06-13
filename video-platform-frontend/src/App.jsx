@@ -91,8 +91,14 @@ function App() {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
       const data = await res.json();
-      setVideos(data);
+      if (res.ok && Array.isArray(data)) {
+        setVideos(data);
+      } else {
+        setVideos([]); // Hatalı veya boşsa boş dizi ata
+        setMessage(data.error || 'Videolar alınamadı!');
+      }
     } catch (err) {
+      setVideos([]);
       setMessage('Videolar alınamadı!');
     }
     setLoading(false);
