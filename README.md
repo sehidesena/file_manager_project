@@ -62,16 +62,5 @@ MEDIACONVERT_ROLE_ARN=...
 4. **Video Oynat / Sil / Güncelle / Sıkıştır:** Videolar üzerinde işlemler yapın.
 5. **Analitik:** "Analitik" butonuna tıklayarak sistemdeki video istatistiklerini görüntüleyin.
 
-## Ekran Görüntüleri
-
-- ![Arayüz Ekran Görüntüsü](docs/screenshot1.png)
-- ![Analitik Modal](docs/screenshot2.png)
-
-## Katkı ve Lisans
-
-Bu proje eğitim ve demo amaçlıdır. Katkıda bulunmak için fork'layabilir, pull request gönderebilirsiniz.
-
 ---
 
-**Hazırlayan:** [Senad](https://github.com/senad)  
-Tarih: Haziran 2025
